@@ -14,6 +14,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{background:#faf7f2;font-family:'DM Sans',sans-serif;overscroll-behavior:none;}
@@ -48,6 +49,8 @@ input,select,textarea{font-family:inherit;}
 .qty-btn{width:32px;height:32px;border-radius:8px;background:#f0ebe0;color:#3a2c0e;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;}
 .qty-btn:active{transform:scale(.92);}
 .spinner{width:40px;height:40px;border:3px solid #e8e0d0;border-top-color:#8b6914;border-radius:50%;animation:spin .8s linear infinite;}
+.scan-overlay{position:fixed;inset:0;background:#000;z-index:300;display:flex;flex-direction:column;}
+.scan-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:75%;max-width:320px;aspect-ratio:1.6;border:3px solid #f5d78a;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.5);}
 </style>
 </head>
 <body>
@@ -199,6 +202,7 @@ function Icon({name,size=18}){
     eye:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
     back:"M19 12H5 M12 19l-7-7 7-7",
     wifi:"M5 12.55a11 11 0 0 1 14.08 0 M1.42 9a16 16 0 0 1 21.16 0 M8.53 16.11a6 6 0 0 1 6.95 0 M12 20h.01",
+    scan:"M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M7 12h10",
   };
   return React.createElement("svg",{width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:"2",strokeLinecap:"round",strokeLinejoin:"round"},
     (paths[name]||"").split(" M").map((d,i)=>React.createElement("path",{key:i,d:i===0?d:"M"+d}))
@@ -400,7 +404,63 @@ function Dashboard({produtos,notinhasAbertas,totalNotinhas,totalHoje,qtdHoje,ven
   );
 }
 
-// ─── Venda ────────────────────────────────────────────────────────────────────
+// ─── Scanner de Código de Barras ──────────────────────────────────────────────
+function BarcodeScanner({onResult,onClose}){
+  const videoRef=useRef(null);
+  const readerRef=useRef(null);
+  const [erro,setErro]=useState(null);
+  const [status,setStatus]=useState("Iniciando câmera...");
+
+  useEffect(()=>{
+    let ativo=true;
+    const reader=new ZXing.BrowserMultiFormatReader();
+    readerRef.current=reader;
+
+    reader.listVideoInputDevices().then(devices=>{
+      if(!ativo)return;
+      if(devices.length===0){ setErro("Nenhuma câmera encontrada."); return; }
+      // Prefere câmera traseira
+      const traseira=devices.find(d=>/back|traseira|rear|environment/i.test(d.label))||devices[devices.length-1];
+      setStatus("Aponte para o código de barras");
+      reader.decodeFromVideoDevice(traseira.deviceId, videoRef.current, (result,err)=>{
+        if(result && ativo){
+          ativo=false;
+          if(navigator.vibrate) navigator.vibrate(100);
+          onResult(result.getText());
+          reader.reset();
+        }
+      });
+    }).catch(e=>{
+      setErro("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+    });
+
+    return ()=>{ ativo=false; try{reader.reset();}catch{} };
+  },[]);
+
+  return(
+    <div className="scan-overlay">
+      <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}>
+        <span style={{color:"#fff",fontWeight:600,fontSize:15}}>📷 Escanear produto</span>
+        <button onClick={onClose} style={{color:"#fff",background:"rgba(255,255,255,.15)",borderRadius:20,padding:"6px 12px",fontSize:13}}>Fechar ✕</button>
+      </div>
+      <div style={{flex:1,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <video ref={videoRef} style={{width:"100%",height:"100%",objectFit:"cover"}} muted playsInline/>
+        {!erro && <div className="scan-frame"/>}
+        {erro && (
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",padding:32,textAlign:"center"}}>
+            <div style={{background:"#fff",borderRadius:16,padding:24}}>
+              <div style={{fontSize:32,marginBottom:8}}>🚫</div>
+              <div style={{color:"#3a2c0e",fontWeight:600,fontSize:14}}>{erro}</div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{padding:20,textAlign:"center",color:"#c4a85a",fontSize:13}}>{erro?"":status}</div>
+    </div>
+  );
+}
+
+
 function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onReload}){
   const [itens,setItens]=useState([]);
   const [pagamento,setPagamento]=useState("dinheiro");
@@ -410,6 +470,7 @@ function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onRelo
   const [view,setView]=useState("pdv");
   const [reciboAtual,setReciboAtual]=useState(null);
   const [salvando,setSalvando]=useState(false);
+  const [scanning,setScanning]=useState(false);
 
   const prodsFiltrados=produtos.filter(p=>p.nome.toLowerCase().includes(busca.toLowerCase())&&Number(p.estoque)>0);
   const addItem=prod=>{
@@ -420,6 +481,19 @@ function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onRelo
     });
     setBusca("");
   };
+
+  const handleScan=(codigo)=>{
+    setScanning(false);
+    const prod=produtos.find(p=>p.codigo_barras===codigo);
+    if(prod){
+      if(Number(prod.estoque)<=0){ showToast(`${prod.nome} sem estoque!`,"err"); return; }
+      addItem(prod);
+      showToast(`✓ ${prod.nome} adicionado`);
+    } else {
+      showToast(`Código ${codigo} não cadastrado`,"err");
+    }
+  };
+
   const setQtd=(prodId,delta)=>setItens(its=>its.map(i=>i.produtoId===prodId?{...i,qtd:Math.max(0.1,+(i.qtd+delta).toFixed(1))}:i).filter(i=>i.qtd>0));
   const removeItem=prodId=>setItens(its=>its.filter(i=>i.produtoId!==prodId));
   const total=itens.reduce((s,it)=>{const p=produtos.find(p=>p.id===it.produtoId);return s+(p?Number(p.preco)*it.qtd:0);},0);
@@ -476,6 +550,8 @@ function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onRelo
   if(view==="recibo"&&reciboAtual) return <ReciboInline venda={reciboAtual} produtos={produtos} clientes={clientes} onNova={()=>setView("pdv")} onHistorico={()=>setView("historico")}/>;
   if(view==="historico") return <HistoricoVendas vendas={vendas} produtos={produtos} clientes={clientes} onBack={()=>setView("pdv")} setModal={setModal}/>;
 
+  if(scanning) return <BarcodeScanner onResult={handleScan} onClose={()=>setScanning(false)}/>;
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -483,7 +559,12 @@ function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onRelo
         <button className="btn-ghost" style={{fontSize:12,padding:"6px 12px"}} onClick={()=>setView("historico")}><Icon name="eye" size={13}/> Histórico</button>
       </div>
       <div style={{position:"relative"}}>
-        <input className="input" placeholder="🔍 Buscar e adicionar produto..." value={busca} onChange={e=>setBusca(e.target.value)}/>
+        <div style={{display:"flex",gap:8}}>
+          <input className="input" style={{flex:1}} placeholder="🔍 Buscar e adicionar produto..." value={busca} onChange={e=>setBusca(e.target.value)}/>
+          <button onClick={()=>setScanning(true)} style={{width:46,background:"#3a2c0e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#f5d78a",flexShrink:0}}>
+            <Icon name="scan" size={20}/>
+          </button>
+        </div>
         {busca&&(
           <div style={{position:"absolute",top:"110%",left:0,right:0,background:"#fff",borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.12)",zIndex:10,maxHeight:220,overflowY:"auto",border:"1.5px solid #e8e0d0"}}>
             {prodsFiltrados.length===0&&<div style={{padding:16,color:"#8b7a50",fontSize:13,textAlign:"center"}}>Nenhum produto encontrado</div>}
@@ -753,6 +834,7 @@ function Estoque({produtos,sb,showToast,setModal,onReload}){
               <div style={{flex:1}}>
                 <div style={{fontSize:15,fontWeight:700,color:"#2a1f06"}}>{p.nome}</div>
                 <div style={{fontSize:12,color:"#8b7a50",marginTop:2}}>{p.categoria} · {fmt(p.preco)}/{p.unidade}</div>
+                {p.codigo_barras&&<div style={{fontSize:10,color:"#b0a080",marginTop:2}}>📦 {p.codigo_barras}</div>}
               </div>
               <div style={{textAlign:"right"}}>
                 <span className={Number(p.estoque)<=Number(p.minimo)?"badge-alert":"badge-ok"}>{p.estoque} {p.unidade}</span>
@@ -885,22 +967,35 @@ function Clientes({clientes,movimentos,sb,showToast,setModal,onReload}){
 
 // ─── Modais ───────────────────────────────────────────────────────────────────
 function ModalProduto({data,onClose,sb,showToast,onSave}){
-  const [form,setForm]=useState(data||{nome:"",categoria:"",preco:"",estoque:"",minimo:"",unidade:"un"});
+  const [form,setForm]=useState(data||{nome:"",categoria:"",preco:"",estoque:"",minimo:"",unidade:"un",codigo_barras:""});
   const [salvando,setSalvando]=useState(false);
+  const [scanning,setScanning]=useState(false);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const salvar=async()=>{
     if(!form.nome||!form.preco)return alert("Preencha nome e preço");
     setSalvando(true);
-    const payload={nome:form.nome,categoria:form.categoria,preco:parseFloat(form.preco),estoque:parseFloat(form.estoque)||0,minimo:parseInt(form.minimo)||3,unidade:form.unidade};
+    const payload={nome:form.nome,categoria:form.categoria,preco:parseFloat(form.preco),estoque:parseFloat(form.estoque)||0,minimo:parseInt(form.minimo)||3,unidade:form.unidade,codigo_barras:form.codigo_barras||null};
     if(data){await sb.from("produtos").update(payload).eq("id",data.id);}
     else{await sb.from("produtos").insert(payload);}
     setSalvando(false);onSave();
   };
+
+  if(scanning) return <BarcodeScanner onResult={(codigo)=>{set("codigo_barras",codigo);setScanning(false);}} onClose={()=>setScanning(false)}/>;
+
   return(
     <>
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:"#2a1f06",marginBottom:20}}>{data?"Editar Produto":"Novo Produto"}</div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div><label className="label">Nome</label><input className="input" value={form.nome} onChange={e=>set("nome",e.target.value)} placeholder="Ex: Queijo Canastra"/></div>
+        <div>
+          <label className="label">Código de barras</label>
+          <div style={{display:"flex",gap:8}}>
+            <input className="input" style={{flex:1}} value={form.codigo_barras||""} onChange={e=>set("codigo_barras",e.target.value)} placeholder="Opcional — para produtos industrializados"/>
+            <button onClick={()=>setScanning(true)} style={{width:46,background:"#3a2c0e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#f5d78a",flexShrink:0}}>
+              <Icon name="scan" size={18}/>
+            </button>
+          </div>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e=>set("categoria",e.target.value)}/></div>
           <div><label className="label">Unidade</label>
