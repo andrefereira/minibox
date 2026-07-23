@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { fmt, now, PAGAMENTOS } from "../../lib/format.js";
 import Icon from "../Icon.jsx";
 import BarcodeScanner from "../BarcodeScanner.jsx";
-import VoiceOrder from "./VoiceOrder.jsx";
 import ReciboInline from "./ReciboInline.jsx";
 import HistoricoVendas from "./HistoricoVendas.jsx";
+
+const SpeechRecognitionCtor =
+  typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 
 export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,setModal,onReload}){
   const [itens,setItens]=useState([]);
@@ -16,7 +18,33 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
   const [reciboAtual,setReciboAtual]=useState(null);
   const [salvando,setSalvando]=useState(false);
   const [scanning,setScanning]=useState(false);
-  const [voiceOrder,setVoiceOrder]=useState(false);
+  const [listening,setListening]=useState(false);
+  const recognitionRef=useRef(null);
+
+  useEffect(()=>()=>{ try{recognitionRef.current?.stop();}catch{} },[]);
+
+  const toggleDitado=()=>{
+    if(listening){ recognitionRef.current?.stop(); return; }
+    if(!SpeechRecognitionCtor){ showToast("Reconhecimento de voz não suportado neste navegador","err"); return; }
+    const rec=new SpeechRecognitionCtor();
+    rec.lang="pt-BR";
+    rec.continuous=true;
+    rec.interimResults=true;
+    recognitionRef.current=rec;
+    rec.onresult=(e)=>{
+      let texto="";
+      for(let i=0;i<e.results.length;i++) texto+=e.results[i][0].transcript+" ";
+      setBusca(texto.trim());
+    };
+    rec.onerror=(e)=>{
+      if(e.error==="no-speech") return;
+      setListening(false);
+      showToast(e.error==="not-allowed"?"Permissão de microfone negada":"Erro ao capturar áudio","err");
+    };
+    rec.onend=()=>setListening(false);
+    rec.start();
+    setListening(true);
+  };
 
   const prodsFiltrados=produtos.filter(p=>p.nome.toLowerCase().includes(busca.toLowerCase())&&Number(p.estoque)>0);
   const addItem=prod=>{
@@ -42,20 +70,6 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
 
   const setQtd=(prodId,delta)=>setItens(its=>its.map(i=>i.produtoId===prodId?{...i,qtd:Math.max(0.1,+(i.qtd+delta).toFixed(1))}:i).filter(i=>i.qtd>0));
   const removeItem=prodId=>setItens(its=>its.filter(i=>i.produtoId!==prodId));
-
-  const handleVoiceConfirm=(selecionados)=>{
-    setVoiceOrder(false);
-    setItens(its=>{
-      let novo=[...its];
-      for(const {produtoId,qtd} of selecionados){
-        const idx=novo.findIndex(i=>i.produtoId===produtoId);
-        if(idx>=0) novo[idx]={...novo[idx],qtd:+(novo[idx].qtd+qtd).toFixed(2)};
-        else novo.push({produtoId,qtd});
-      }
-      return novo;
-    });
-    showToast(`✓ ${selecionados.length} item(ns) adicionados pelo pedido de voz`);
-  };
   const total=itens.reduce((s,it)=>{const p=produtos.find(p=>p.id===it.produtoId);return s+(p?Number(p.preco)*it.qtd:0);},0);
   const trocoVal=pagamento==="dinheiro"&&troco?Math.max(0,parseFloat(troco)-total):0;
 
@@ -108,7 +122,6 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
   if(view==="historico") return <HistoricoVendas vendas={vendas} produtos={produtos} clientes={clientes} onBack={()=>setView("pdv")} setModal={setModal}/>;
 
   if(scanning) return <BarcodeScanner onResult={handleScan} onClose={()=>setScanning(false)}/>;
-  if(voiceOrder) return <VoiceOrder produtos={produtos} onConfirm={handleVoiceConfirm} onClose={()=>setVoiceOrder(false)}/>;
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -118,8 +131,8 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
       </div>
       <div style={{position:"relative"}}>
         <div style={{display:"flex",gap:8}}>
-          <input className="input" style={{flex:1}} placeholder="🔍 Buscar e adicionar produto..." value={busca} onChange={e=>setBusca(e.target.value)}/>
-          <button onClick={()=>setVoiceOrder(true)} style={{width:46,background:"#3a2c0e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#f5d78a",flexShrink:0}}>
+          <input className="input" style={{flex:1}} placeholder={listening?"🎙️ Ouvindo... fale o produto":"🔍 Buscar e adicionar produto..."} value={busca} onChange={e=>setBusca(e.target.value)}/>
+          <button onClick={toggleDitado} style={{width:46,background:listening?"#c62828":"#3a2c0e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#f5d78a",flexShrink:0,transition:".15s"}}>
             <Icon name="mic" size={20}/>
           </button>
           <button onClick={()=>setScanning(true)} style={{width:46,background:"#3a2c0e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#f5d78a",flexShrink:0}}>
