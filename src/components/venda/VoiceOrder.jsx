@@ -19,17 +19,19 @@ export default function VoiceOrder({produtos,onConfirm,onClose}){
     setTranscript("");transcriptRef.current="";setErro("");setStatus("listening");
     const rec=new SpeechRecognitionCtor();
     rec.lang="pt-BR";
-    rec.continuous=false;
+    rec.continuous=true;
     rec.interimResults=true;
     recognitionRef.current=rec;
 
     rec.onresult=(e)=>{
       let texto="";
-      for(let i=0;i<e.results.length;i++) texto+=e.results[i][0].transcript;
+      for(let i=0;i<e.results.length;i++) texto+=e.results[i][0].transcript+" ";
+      texto=texto.trim();
       transcriptRef.current=texto;
       setTranscript(texto);
     };
     rec.onerror=(e)=>{
+      if(e.error==="no-speech") return; // silêncio momentâneo: deixa continuar ouvindo
       setStatus("error");
       setErro(e.error==="not-allowed"?"Permissão de microfone negada.":"Erro ao capturar áudio. Tente de novo.");
     };
