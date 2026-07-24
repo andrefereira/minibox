@@ -43,6 +43,12 @@ export default function ReciboInline({venda,produtos,clientes,onNova,onHistorico
           <span style={{color:"#8b7a50"}}>{pag?.emoji} {pag?.label}{cliente?` · ${cliente.nome}`:""}</span>
           {Number(venda.troco)>0&&<span style={{color:"#2e7d32",fontWeight:600}}>Troco: {fmt(venda.troco)}</span>}
         </div>
+        {venda.assinatura&&(
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11,color:"#8b7a50",marginBottom:4}}>Assinatura do cliente</div>
+            <img src={venda.assinatura} alt="Assinatura" style={{width:"100%",maxHeight:110,objectFit:"contain",background:"#fff",border:"1px solid #ede8de",borderRadius:8}}/>
+          </div>
+        )}
         <div style={{textAlign:"center",marginTop:14,fontSize:11,color:"#b0a080"}}>Obrigado pela preferência! 🙏</div>
       </div>
       <button onClick={handleShare} disabled={sharing}

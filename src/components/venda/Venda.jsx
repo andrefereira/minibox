@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { fmt, now, PAGAMENTOS } from "../../lib/format.js";
 import Icon from "../Icon.jsx";
 import BarcodeScanner from "../BarcodeScanner.jsx";
+import SignaturePad from "./SignaturePad.jsx";
 import ReciboInline from "./ReciboInline.jsx";
 import HistoricoVendas from "./HistoricoVendas.jsx";
 
@@ -18,6 +19,7 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
   const [reciboAtual,setReciboAtual]=useState(null);
   const [salvando,setSalvando]=useState(false);
   const [scanning,setScanning]=useState(false);
+  const [assinando,setAssinando]=useState(false);
   const [listening,setListening]=useState(false);
   const recognitionRef=useRef(null);
 
@@ -73,14 +75,21 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
   const total=itens.reduce((s,it)=>{const p=produtos.find(p=>p.id===it.produtoId);return s+(p?Number(p.preco)*it.qtd:0);},0);
   const trocoVal=pagamento==="dinheiro"&&troco?Math.max(0,parseFloat(troco)-total):0;
 
-  const finalizar=async()=>{
+  const iniciarFinalizacao=()=>{
     if(itens.length===0){showToast("Adicione produtos","err");return;}
     if(pagamento==="notinha"&&!clienteId){showToast("Selecione o cliente","err");return;}
     if(pagamento==="notinha"){
       const c=clientes.find(c=>c.id===parseInt(clienteId));
       const divida=movimentos.filter(m=>m.cliente_id===c.id&&!m.pago).reduce((s,m)=>s+Number(m.valor),0);
       if(total>(Number(c.limite)-divida)){showToast(`Limite insuficiente! Disponível: ${fmt(Number(c.limite)-divida)}`,"err");return;}
+      setAssinando(true);
+      return;
     }
+    finalizar(null);
+  };
+
+  const finalizar=async(assinatura)=>{
+    setAssinando(false);
     setSalvando(true);
     try {
       const vendaData = {
@@ -90,6 +99,7 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
         cliente_id: pagamento==="notinha"?parseInt(clienteId):null,
         troco: trocoVal,
         itens: itens.map(it=>({produtoId:it.produtoId,qtd:it.qtd})),
+        assinatura: assinatura||null,
       };
       const {data:novaVenda,error:errV}=await sb.from("vendas").insert(vendaData).select().single();
       if(errV) throw errV;
@@ -122,6 +132,10 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
   if(view==="historico") return <HistoricoVendas vendas={vendas} produtos={produtos} clientes={clientes} onBack={()=>setView("pdv")} setModal={setModal}/>;
 
   if(scanning) return <BarcodeScanner onResult={handleScan} onClose={()=>setScanning(false)}/>;
+  if(assinando){
+    const cliente=clientes.find(c=>c.id===parseInt(clienteId));
+    return <SignaturePad clienteNome={cliente?.nome} totalFmt={fmt(total)} onConfirm={finalizar} onCancel={()=>setAssinando(false)}/>;
+  }
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -214,7 +228,7 @@ export default function Venda({produtos,clientes,movimentos,vendas,sb,showToast,
           </div>
         )}
       </div>
-      <button className="btn-green" style={{width:"100%",fontSize:16,padding:16,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:salvando?.6:1}} onClick={finalizar} disabled={salvando}>
+      <button className="btn-green" style={{width:"100%",fontSize:16,padding:16,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:salvando?.6:1}} onClick={iniciarFinalizacao} disabled={salvando}>
         {salvando?"⏳ Salvando...": <><Icon name="check" size={18}/> Finalizar Venda · {fmt(total)}</>}
       </button>
     </div>

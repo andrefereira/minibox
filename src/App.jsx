@@ -124,7 +124,7 @@ function App(){
         {tab==="dashboard"&&<Dashboard produtos={produtos} notinhasAbertas={notinhasAbertas} totalNotinhas={totalNotinhas} totalHoje={totalHoje} qtdHoje={vendasHoje.length} vendasHoje={vendasHoje} alertas={alertas} setTab={setTab} onReload={carregar}/>}
         {tab==="venda"&&<Venda produtos={produtos} clientes={clientes} movimentos={movimentos} vendas={vendas} sb={sb} showToast={showToast} setModal={setModal} onReload={()=>{reloadProdutos();reloadMovimentos();reloadVendas();}}/>}
         {tab==="estoque"&&<Estoque produtos={produtos} sb={sb} showToast={showToast} setModal={setModal} onReload={reloadProdutos}/>}
-        {tab==="notinhas"&&<Notinhas movimentos={movimentos} clientes={clientes} produtos={produtos} sb={sb} showToast={showToast} setModal={setModal} onReload={()=>{reloadMovimentos();reloadProdutos();}}/>}
+        {tab==="notinhas"&&<Notinhas movimentos={movimentos} clientes={clientes} produtos={produtos} vendas={vendas} sb={sb} showToast={showToast} setModal={setModal} onReload={()=>{reloadMovimentos();reloadProdutos();}}/>}
         {tab==="clientes"&&<Clientes clientes={clientes} movimentos={movimentos} sb={sb} showToast={showToast} setModal={setModal} onReload={reloadClientes}/>}
       </div>
 

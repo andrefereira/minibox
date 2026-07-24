@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { fmt, fmtDate } from "../../lib/format.js";
+import { fmt, fmtDate, fmtTime } from "../../lib/format.js";
 import Icon from "../Icon.jsx";
 
-export default function Notinhas({movimentos,clientes,produtos,sb,showToast,setModal,onReload}){
+export default function Notinhas({movimentos,clientes,produtos,vendas,sb,showToast,setModal,onReload}){
   const [clienteSel,setClienteSel]=useState("todos");
   const porCliente=clientes.map(c=>{
     const movs=movimentos.filter(m=>m.cliente_id===c.id&&!m.pago);
-    return{...c,movs,divida:movs.reduce((s,m)=>s+Number(m.valor),0)};
+    const compras=(vendas||[]).filter(v=>v.pagamento==="notinha"&&v.cliente_id===c.id).sort((a,b)=>new Date(b.data)-new Date(a.data));
+    return{...c,movs,compras,divida:movs.reduce((s,m)=>s+Number(m.valor),0)};
   }).filter(c=>c.divida>0);
   const filtrados=clienteSel==="todos"?porCliente:porCliente.filter(c=>c.id===parseInt(clienteSel));
   return(
@@ -51,6 +52,23 @@ export default function Notinhas({movimentos,clientes,produtos,sb,showToast,setM
               );
             })}
           </div>
+          {c.compras.length>0&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#8b7a50",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Compras nesta notinha</div>
+              {c.compras.map(v=>(
+                <button key={v.id} onClick={()=>setModal({type:"recibo",data:v})}
+                  style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#faf7f2",borderRadius:8,marginBottom:6,textAlign:"left"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:"#3a2c0e"}}>{fmtDate(v.data)} às {fmtTime(v.data)}</div>
+                    <div style={{fontSize:11,color:"#8b7a50"}}>{fmt(v.total)}</div>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:600,color:v.assinatura?"#2e7d32":"#c62828",display:"flex",alignItems:"center",gap:4}}>
+                    {v.assinatura?<>✍️ Assinado</>:"Sem assinatura"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <button className="btn-primary" style={{width:"100%"}} onClick={()=>setModal({type:"pagar-notinha",data:c})}>
             <Icon name="check" size={14}/> Registrar Pagamento
           </button>
